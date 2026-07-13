@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Installing Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 23
+
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y rpm
+          sudo snap install snapcraft --classic
+          npm install
+          npm run publish:linux
+
+  build-and-publish-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Installing Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 23
+
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          npm install
+          npm run publish:mac
+
+  build-and-publish-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Installing Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 23
+
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          npm install
+          npm run publish:win
+
+  hashes:
+    needs:
+      - build-and-publish-linux
+      - build-and-publish-mac
+      - build-and-publish-win
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets, generate sha256 hashes, upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir assets
+          cd assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern '*' \
+            --skip-existing
+          # Exclude any existing hashes file so re-runs don't hash themselves.
+          find . -maxdepth 1 -type f ! -name 'hashes.txt' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > ../hashes.txt
+          cd ..
+          sed -i 's| \./| |g' hashes.txt
+          cat hashes.txt
+          gh release upload "$TAG" hashes.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

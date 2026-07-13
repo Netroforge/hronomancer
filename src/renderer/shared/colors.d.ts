@@ -1,0 +1,10 @@
+import type { ThemePreset } from './types';
+export declare const CYBER_PINK = "#ff2a6d";
+export declare const CYBER_CYAN = "#05d9e8";
+export declare const CYBER_GREEN = "#00ff41";
+export declare const CYBER_PURPLE = "#d100d1";
+export declare const CYBER_YELLOW = "#faff00";
+export declare const BG_DARK = "#0a0a0a";
+export declare function themeColor(theme: ThemePreset, key: 'primary' | 'secondary' | 'accent' | 'glow' | 'bg'): string;
+export declare function hexToRgb(hex: string): [number, number, number];
+export declare function rgbToString(rgb: [number, number, number], alpha?: number): string;

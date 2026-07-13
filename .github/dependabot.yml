@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    groups:
+      typescript:
+        patterns:
+          - '@types/*'
+          - 'typescript'
+      vue:
+        patterns:
+          - 'vue*'
+          - '@vue/*'
+      eslint:
+        patterns:
+          - 'eslint*'
+          - '@eslint/*'
+          - '@typescript-eslint/*'
+      electron:
+        patterns:
+          - 'electron'
+          - 'electron-*'
+          - '@electron-toolkit/*'
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
