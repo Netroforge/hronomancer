@@ -19,7 +19,7 @@
     "electron": "^43.1.0",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
+    "vite": "^7.3.6",
     "vue-tsc": "^3.3.7"
   }
 }
