@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Restored click-through overlays on Linux so effects no longer block the
+  configuration window or other applications.
+
 ## 1.1.0 - 2026-07-26
 
 ### Added

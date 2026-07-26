@@ -198,6 +198,16 @@ function detectDisplays(): void {
   console.log(`[Hronomancer] Detected ${displays.length} display(s)`);
 }
 
+function makeOverlayClickThrough(win: BrowserWindow): void {
+  // `forward` is only supported on macOS and Windows. Passing only the
+  // documented arguments on Linux also avoids compositor-specific behavior.
+  if (process.platform === 'linux') {
+    win.setIgnoreMouseEvents(true);
+  } else {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
+}
+
 function createOverlayForDisplay(display: Electron.Display): void {
   if (overlayWindows.has(display.id)) return;
 
@@ -223,10 +233,13 @@ function createOverlayForDisplay(display: Electron.Display): void {
   });
 
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setIgnoreMouseEvents(true, { forward: true });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  makeOverlayClickThrough(win);
 
   win.webContents.on('did-finish-load', () => {
+    // Some Linux window managers reset the input region while the native
+    // window is being mapped. Reapply click-through after mapping/loading.
+    makeOverlayClickThrough(win);
     win.webContents.send('display-info', {
       displayId: display.id,
       bounds: display.bounds,
