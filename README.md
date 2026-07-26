@@ -27,8 +27,8 @@ builds only contact GitHub Releases to check for app updates.
 - **Launch at login** — start the overlay automatically (background) on user
   login.
 - **Automatic updates** — packaged builds check GitHub Releases on startup;
-  update actions stay under your control through notifications and the tray
-  menu. Unsigned macOS builds open the release downloads for manual install.
+  signed update downloads and installation stay under your control through
+  notifications and the tray menu.
 - **Performance profiles** — choose `ECO`, `BALANCED`, or `SMOOTH` to trade
   screen-analysis responsiveness and animation frame rate for lower resource use.
 - **Global hotkeys** — toggle effects, switch themes, open config, and start a
@@ -51,18 +51,23 @@ Grab the latest installer / binary from the
 
 ```bash
 npm install
-npm run dev        # launches Electron + the config window
+npm run dev        # launches the Tauri app
 ```
 
 To produce a distributable build:
 
 ```bash
 npm run build
-npm run pack       # or `npm run dist` (distributable installer)
+npm run pack       # native executable, no bundle
+npm run dist       # platform installer / app bundle
 ```
 
 > The overlay windows are click-through: you interact with your desktop as
 > usual. Open the control panel with `Ctrl+Alt+U` to change anything.
+>
+> Building from source also requires the Rust toolchain and the platform
+> prerequisites listed in the
+> [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/).
 
 ## Hotkeys
 
@@ -121,11 +126,14 @@ development here:
 ## Development
 
 - `npm run dev` — dev mode with hot reload.
-- `npm run type-check` — validate renderer, preload, and main-process types.
-- `npm run build` — type-check + production build via `electron-vite`.
-- `npm run build:unpack` — build an unpacked app for local smoke testing.
+- `npm test` — run the settings and multi-monitor analysis regression tests.
+- `npm run type-check` — validate the Vue/controller renderer types.
+- `npm run build` — type-check + production frontend build via Vite.
+- `npm run pack` — build the native app without creating an installer.
 - `npm run build:linux` / `build:mac` / `build:win` — create platform packages.
-- `electron-builder.yml` — packaging config.
+- `npm run dist` — create the current platform's Tauri bundles.
+- `Dockerfile.build` — reproducible Linux build environment.
+- `src-tauri/tauri.conf.json` — native app, updater, and packaging config.
 
 ## License
 

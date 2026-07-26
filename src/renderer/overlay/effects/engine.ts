@@ -27,7 +27,7 @@ const PRESENCE_DIM = 0.28;
 
 // Hard ceiling on concurrent glitches so a burst of activity can't pile up an
 // unbounded draw list (protects the frame budget); oldest are dropped first.
-const MAX_GLITCHES = 90;
+const MAX_GLITCHES = 36;
 
 // Signal Log bounds: how many recent screen-assist events to retain, how long
 // before an entry ages out, and how long the "while you were away" recap holds.
@@ -161,11 +161,12 @@ export class CyberEngine {
     }
   }
 
-  // Live system load (0..1), the max of CPU and RAM pressure. Drives the edge
-  // glow hue/pulse and the stress-glitch rate; 0 when the channel is disabled.
+  // Live system pressure (0..1). Normal workstation memory residency is not
+  // stress: only the top 30% of reported CPU/RAM usage drives extra glitches.
   private systemLoad(): number {
     if (!this.state.systemLoadGlow) return 0;
-    return Math.min(1, Math.max(this.state.system.cpu, this.state.system.ram) / 100);
+    const usage = Math.max(this.state.system.cpu, this.state.system.ram) / 100;
+    return Math.min(1, Math.max(0, (usage - 0.7) / 0.3));
   }
 
   // Target presence opacity: fade down when the user is away (and dimming is on).
@@ -359,9 +360,9 @@ export class CyberEngine {
     this.updateFocus(dt);
 
     // Screen-reactive: motion under the overlay tears the signal.
-    if (this.state.showGlitches && screen.motion > 0.05) {
-      const motionGlitchChance = screen.motion * intensity * 0.15;
-      if (Math.random() < motionGlitchChance && time - this.lastGlitch > 80) {
+    if (this.state.showGlitches && screen.motion > 0.15) {
+      const motionGlitchChance = screen.motion * intensity * 0.08;
+      if (Math.random() < motionGlitchChance && time - this.lastGlitch > 400) {
         this.emitGlitches('motion', mouse.x, mouse.y, screen.motion);
         this.lastGlitch = time;
       }
@@ -377,7 +378,7 @@ export class CyberEngine {
     // stressed machine (high load) visibly destabilises: more, stronger glitches.
     if (this.state.showGlitches) {
       const glitchChance = this.state.glitchFrequency * intensity * (1 + activityLevel * 2 + screen.motion * 3 + load * 3);
-      if (Math.random() < glitchChance && time - this.lastGlitch > 100) {
+      if (Math.random() < glitchChance && time - this.lastGlitch > 400) {
         this.emitGlitches('ambient', mouse.x, mouse.y, Math.min(1, 0.3 + Math.random() * 0.4 + load * 0.4));
         this.lastGlitch = time;
       }

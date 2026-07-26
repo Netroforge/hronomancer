@@ -248,3 +248,8 @@ dist-electron
 dist
 out
 old
+src-tauri/target/
+src-tauri/gen/
+/.tauri-updater.key
+/.tauri-updater.key.pub
+/.tauri-updater-password

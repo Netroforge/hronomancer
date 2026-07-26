@@ -3,7 +3,7 @@ import type {
   AttentionRegion,
   AttentionType,
   RegionActivity,
-} from '../../src/renderer/shared/types';
+} from '../shared/types';
 
 // ─── Analysis grid ──────────────────────────────────────────────
 // A far finer grid than the old 6×4. At the capture thumbnail's resolution each
@@ -20,18 +20,6 @@ const CELL_COUNT = COLS * ROWS;
 // the ambient/assist channels (radar, cinema, task-done).
 const MAX_REGIONS = 6;
 
-let nextRegionId = 1;
-
-// Per-cell running brightness baseline (EMA). Scoring reacts to how much a cell
-// *changed* against this baseline rather than its absolute brightness, so a
-// steady bright window doesn't highlight forever while a popup that suddenly
-// appears does — then fades as the baseline catches up.
-let baseline: Float32Array | null = null;
-
-// Wall-clock of the previous analysis, so churn/quiet accumulate in real ms
-// regardless of the (now adaptive) capture cadence.
-let prevAnalyzeTime = 0;
-
 // ─── Per-region tracking state (module-local, never serialised) ──
 // Task-done detection needs a short motion history per region; keeping it here
 // keeps the broadcast payload to plain serialisable fields.
@@ -44,7 +32,32 @@ interface TrackState {
   ageMs: number; // total tracked lifetime
   sustainedMotionMs: number; // time spent with large-area motion (→ video)
 }
-const tracks = new Map<number, TrackState>();
+
+interface AnalyzerState {
+  nextRegionId: number;
+  baseline: Float32Array | null;
+  prevAnalyzeTime: number;
+  tracks: Map<number, TrackState>;
+}
+
+// Each monitor owns a distinct AttentionAnalysis object. Keeping the temporal
+// analyser state keyed to that object prevents frames, baselines, and tracked
+// regions from one display leaking into another.
+const analyzerStates = new WeakMap<AttentionAnalysis, AnalyzerState>();
+
+function stateFor(analysis: AttentionAnalysis): AnalyzerState {
+  let state = analyzerStates.get(analysis);
+  if (!state) {
+    state = {
+      nextRegionId: 1,
+      baseline: null,
+      prevAnalyzeTime: 0,
+      tracks: new Map<number, TrackState>(),
+    };
+    analyzerStates.set(analysis, state);
+  }
+  return state;
+}
 
 interface CellStats {
   brightness: Float32Array; // mean luminance 0..255
@@ -87,12 +100,15 @@ export function analyzeScreenForAttention(
   height: number,
   analysis: AttentionAnalysis,
 ): AttentionPulse {
+  const analyzer = stateFor(analysis);
   const { sensitivity, mode } = analysis;
   const cellW = Math.floor(width / COLS);
   const cellH = Math.floor(height / ROWS);
   const now = Date.now();
-  const dt = prevAnalyzeTime ? Math.min(now - prevAnalyzeTime, 2000) : 0;
-  prevAnalyzeTime = now;
+  const dt = analyzer.prevAnalyzeTime
+    ? Math.min(now - analyzer.prevAnalyzeTime, 2000)
+    : 0;
+  analyzer.prevAnalyzeTime = now;
   const empty: AttentionPulse = { energy: 0, anyNew: false, anyChurning: false, anyComplete: false };
   if (cellW === 0 || cellH === 0) return empty;
 
@@ -100,13 +116,13 @@ export function analyzeScreenForAttention(
   const prevReady = !!prevPixels && prevPixels.length === pixels.length;
 
   let priming = false;
-  if (!baseline || baseline.length !== CELL_COUNT) {
-    baseline = new Float32Array(CELL_COUNT);
+  if (!analyzer.baseline || analyzer.baseline.length !== CELL_COUNT) {
+    analyzer.baseline = new Float32Array(CELL_COUNT);
     priming = true;
   }
 
   const stats = computeCellStats(pixels, width, cellW, cellH, prevReady ? prevPixels! : null);
-  if (priming) baseline.set(stats.brightness);
+  if (priming) analyzer.baseline.set(stats.brightness);
 
   // ── Per-cell interest energy + change mask ──────────────────────
   // Attention reacts to *change*, not steady state: the mask is driven by motion
@@ -124,8 +140,8 @@ export function analyzeScreenForAttention(
     for (let gx = 0; gx < COLS; gx++) {
       const ci = gy * COLS + gx;
       const avgB = stats.brightness[ci];
-      const jump = Math.max(0, avgB - baseline[ci]) / 255; // brightened vs steady state
-      const drop = Math.max(0, baseline[ci] - avgB) / 255; // content vanished
+      const jump = Math.max(0, avgB - analyzer.baseline[ci]) / 255; // brightened vs steady state
+      const drop = Math.max(0, analyzer.baseline[ci] - avgB) / 255; // content vanished
       const localBright = (avgB - neighborBrightnessMean(gx, gy, stats)) / 255;
       const motion = stats.motion[ci];
 
@@ -156,17 +172,23 @@ export function analyzeScreenForAttention(
   // Advance the baseline AFTER scoring so each frame's jump is measured against
   // the prior steady state; 0.1 lets a lingering popup fade within a couple of s.
   for (let ci = 0; ci < CELL_COUNT; ci++) {
-    baseline[ci] = baseline[ci] * 0.9 + stats.brightness[ci] * 0.1;
+    analyzer.baseline[ci] =
+      analyzer.baseline[ci] * 0.9 + stats.brightness[ci] * 0.1;
   }
 
   // ── Group the mask into connected components ────────────────────
-  const components = connectedComponents(mask, energy, stats);
+  const components = connectedComponents(
+    mask,
+    energy,
+    stats,
+    analyzer.baseline,
+  );
 
   // Keep the strongest components (by summed energy) — the rest are noise.
   components.sort((a, b) => b.energy - a.energy);
   if (components.length > MAX_REGIONS * 2) components.length = MAX_REGIONS * 2;
 
-  const pulse = reconcileRegions(analysis, components, now, dt, sensitivity);
+  const pulse = reconcileRegions(analysis, analyzer, components, now, dt, sensitivity);
   pulse.energy = totalEnergy;
 
   analysis.gridCols = COLS;
@@ -250,7 +272,12 @@ function computeCellStats(
 // 4-connected flood fill over the change mask, reducing each blob to the
 // aggregate signals the classifier reads. Uses an explicit stack (never
 // recurses) so a full-screen change can't blow the call stack.
-function connectedComponents(mask: Uint8Array, energy: Float32Array, stats: CellStats): Component[] {
+function connectedComponents(
+  mask: Uint8Array,
+  energy: Float32Array,
+  stats: CellStats,
+  baseline: Float32Array,
+): Component[] {
   const seen = new Uint8Array(CELL_COUNT);
   const stack: number[] = [];
   const out: Component[] = [];
@@ -280,7 +307,7 @@ function connectedComponents(mask: Uint8Array, energy: Float32Array, stats: Cell
       const m = stats.motion[ci];
       mSum += m;
       if (m > mMax) mMax = m;
-      jSum += Math.max(0, stats.brightness[ci] - baseline![ci]) / 255;
+      jSum += Math.max(0, stats.brightness[ci] - baseline[ci]) / 255;
       edgeSum += stats.edges[ci];
       cSum += stats.contrast[ci];
       colSum += neighborColorDistance(gx, gy, stats);
@@ -339,6 +366,7 @@ function neighborColorDistance(gx: number, gy: number, stats: CellStats): number
 // classify it, spawn regions for unmatched components and expire stale ones.
 function reconcileRegions(
   analysis: AttentionAnalysis,
+  analyzer: AnalyzerState,
   components: Component[],
   now: number,
   dt: number,
@@ -373,10 +401,10 @@ function reconcileRegions(
       region.w += (nw - region.w) * 0.5;
       region.h += (nh - region.h) * 0.5;
       region.lastSeen = now;
-      track = tracks.get(region.id) ?? freshTrack();
+      track = analyzer.tracks.get(region.id) ?? freshTrack();
     } else {
       region = {
-        id: nextRegionId++,
+        id: analyzer.nextRegionId++,
         x: nx, y: ny, w: nw, h: nh,
         score: 0,
         type: 'motion',
@@ -393,7 +421,7 @@ function reconcileRegions(
       pulse.anyNew = true;
     }
     matched.add(region.id);
-    tracks.set(region.id, track);
+    analyzer.tracks.set(region.id, track);
 
     const areaFrac = (c.maxGx - c.minGx + 1) * (c.maxGy - c.minGy + 1) / CELL_COUNT;
     advanceLifecycle(region, track, c, areaFrac, now, dt, sensitivity, pulse);
@@ -405,7 +433,7 @@ function reconcileRegions(
   // moment we need to keep counting its quiet time to fire the completion pulse.
   for (const r of analysis.regions) {
     if (matched.has(r.id) || r.dismissed) continue;
-    const track = tracks.get(r.id);
+    const track = analyzer.tracks.get(r.id);
     if (!track) continue;
     advanceLifecycle(r, track, null, r.w * r.h, now, dt, sensitivity, pulse);
   }
@@ -415,17 +443,19 @@ function reconcileRegions(
   // moving (a completed region is, by definition, no longer changing).
   analysis.regions = analysis.regions.filter((r) => {
     if (matched.has(r.id)) return true;
-    const track = tracks.get(r.id);
+    const track = analyzer.tracks.get(r.id);
     if (track?.completed && now < track.holdUntil) return true;
     if (now - r.lastSeen < 1200) return true;
-    tracks.delete(r.id);
+    analyzer.tracks.delete(r.id);
     return false;
   });
 
   // Enforce the tracked cap by score (completed/video already floored high).
   if (analysis.regions.length > MAX_REGIONS) {
     analysis.regions.sort((a, b) => b.score - a.score);
-    for (const r of analysis.regions.slice(MAX_REGIONS)) tracks.delete(r.id);
+    for (const r of analysis.regions.slice(MAX_REGIONS)) {
+      analyzer.tracks.delete(r.id);
+    }
     analysis.regions.length = MAX_REGIONS;
   }
 

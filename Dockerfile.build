@@ -1,0 +1,41 @@
+FROM node:24-slim
+
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH=/usr/local/cargo/bin:${PATH}
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        libclang-dev \
+        libdrm-dev \
+        libgbm-dev \
+        libayatana-appindicator3-dev \
+        libpipewire-0.3-dev \
+        librsvg2-dev \
+        libssl-dev \
+        libwebkit2gtk-4.1-dev \
+        libxcb1-dev \
+        libxi-dev \
+        libxrandr-dev \
+        libxtst-dev \
+        patchelf \
+        pkg-config \
+        rpm \
+        xdg-utils \
+    && curl --proto '=https' --tlsv1.2 --silent --show-error --fail \
+        https://sh.rustup.rs \
+        | sh -s -- --default-toolchain 1.94.1 --profile minimal --no-modify-path -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# linuxdeploy's AppImage output plugin shells out to `file`, but Tauri's
+# prerequisite list does not pull it into slim base images.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends file \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+CMD ["npm", "run", "dist"]
