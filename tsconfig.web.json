@@ -11,17 +11,14 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "declaration": true,
-    "composite": true,
+    "noEmit": true,
     "paths": {
       "@shared/*": ["../shared/*"]
-    },
-    "baseUrl": "."
+    }
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.vue",
-    "src/renderer/shared/**/*.ts",
     "env.d.ts"
   ]
 }

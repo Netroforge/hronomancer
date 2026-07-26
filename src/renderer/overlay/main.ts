@@ -1,5 +1,5 @@
 import { createDefaultState } from '../shared/types';
-import type { CyberAPI } from '../shared/types';
+import type { CyberAPI, PerformanceProfile } from '../shared/types';
 import { CyberEngine } from './effects/engine';
 
 declare global {
@@ -29,7 +29,10 @@ window.cyberAPI?.onDisplayInfo((info) => {
 const state = createDefaultState();
 const engine = new CyberEngine(canvas, state);
 
+let performanceProfile: PerformanceProfile = 'balanced';
+
 window.cyberAPI?.onStateUpdate((s) => {
+  performanceProfile = s.performanceProfile ?? 'balanced';
   engine.updateState(s);
 });
 
@@ -56,12 +59,16 @@ window.cyberAPI?.getState();
 // animated layers, and when nothing dynamic is happening we drop to a low
 // idle rate so an untouched overlay costs almost nothing. rAF still ticks at
 // the display rate — we just skip the expensive canvas work between targets.
-const ACTIVE_FPS = 30;
-const IDLE_FPS = 10;
+const FRAME_RATES: Record<PerformanceProfile, { active: number; idle: number }> = {
+  eco: { active: 20, idle: 5 },
+  balanced: { active: 30, idle: 10 },
+  smooth: { active: 60, idle: 15 },
+};
 let lastRenderTime = -Infinity;
 
 function loop(time: number): void {
-  const minInterval = 1000 / (engine.isActive() ? ACTIVE_FPS : IDLE_FPS);
+  const rates = FRAME_RATES[performanceProfile];
+  const minInterval = 1000 / (engine.isActive() ? rates.active : rates.idle);
   if (time - lastRenderTime >= minInterval) {
     lastRenderTime = time;
     // Isolate a bad frame so a single thrown error can't permanently freeze

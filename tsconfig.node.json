@@ -9,12 +9,12 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "outDir": "dist-electron",
-    "declaration": true,
-    "composite": true
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": [
     "electron/**/*.ts",
-    "src/renderer/shared/**/*.ts"
+    "src/renderer/shared/**/*.ts",
+    "test/**/*.ts"
   ]
 }

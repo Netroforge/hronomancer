@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Hronomancer clock glyph</title>
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05d9e8"/>
+      <stop offset="1" stop-color="#0066ff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="210" fill="#090b11"/>
+  <path d="M192 96h640l96 96v640l-96 96H192l-96-96V192z" fill="none" stroke="url(#frame)" stroke-width="28"/>
+  <path d="M512 206a306 306 0 1 1-216 89" fill="none" stroke="#05d9e8" stroke-width="46" stroke-linecap="square" filter="url(#glow)"/>
+  <path d="M296 295l-94-8 8-94" fill="none" stroke="#ff2a6d" stroke-width="38" stroke-linecap="square"/>
+  <path d="M512 512V310M512 512l142 92" fill="none" stroke="#faff00" stroke-width="44" stroke-linecap="square"/>
+  <circle cx="512" cy="512" r="54" fill="#090b11" stroke="#00ff41" stroke-width="30" filter="url(#glow)"/>
+  <path d="M168 720h120M736 304h120M736 720h120" stroke="#ff2a6d" stroke-width="28"/>
+  <path d="M168 768h72M784 256h72M784 768h72" stroke="#05d9e8" stroke-width="18"/>
+</svg>
