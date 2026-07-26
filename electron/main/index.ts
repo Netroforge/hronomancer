@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, desktopCapturer, globalShortcut, Notification, session, shell } from 'electron';
-import type { NativeImage } from 'electron';
+import type { MenuItemConstructorOptions, NativeImage } from 'electron';
+import electronLog from 'electron-log';
+import { autoUpdater } from 'electron-updater';
 import { join } from 'path';
 import { uIOhook } from 'uiohook-napi';
 import { deflateSync } from 'zlib';
@@ -47,10 +49,24 @@ app.commandLine.appendSwitch('--enable-gpu-rasterization');
 // gesture (it's click-through), so allow the AudioContext to run regardless.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Match Textonom's update policy: discover updates automatically, let the user
+// choose when to download, and install a downloaded update when the app quits.
+electronLog.transports.file.level = app.isPackaged ? 'info' : 'debug';
+autoUpdater.logger = electronLog;
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
 let tray: Tray | null = null;
 const overlayWindows = new Map<number, BrowserWindow>();
 let configWindow: BrowserWindow | null = null;
 let bootStartTime = Date.now();
+
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded';
+const RELEASES_URL = 'https://github.com/Netroforge/hronomancer/releases';
+let updateStatus: UpdateStatus = 'idle';
+let updateVersion: string | null = null;
+let manualUpdateCheck = false;
+let activeUpdateNotification: Notification | null = null;
 
 // `state` holds the SHARED runtime (input, system, screen, presence, pomodoro,
 // attention, displays, master toggle) plus the DEFAULT settings template that
@@ -344,6 +360,8 @@ function rebuildTrayMenu(): void {
         { label: 'MAX (100%)', click: () => { applyDisplaySettings({ intensity: 1.0 }, null, true); rebuildTrayMenu(); broadcastState(); }},
       ],
     },
+    { type: 'separator' },
+    ...buildUpdateMenuItems(),
     { type: 'separator' },
     { label: 'Quit', click: () => { try { uIOhook.stop(); } catch {} app.quit(); }},
   ]);
@@ -929,6 +947,186 @@ function applyLoginItem(): void {
   }
 }
 
+// ─── Updates ─────────────────────────────────────────────────────
+
+function buildUpdateMenuItems(): MenuItemConstructorOptions[] {
+  switch (updateStatus) {
+    case 'checking':
+      return [{ label: 'Checking for Updates...', enabled: false }];
+    case 'available':
+      return [{
+        label: `${process.platform === 'darwin' ? 'View' : 'Download'} Update${updateVersion ? ` v${updateVersion}` : ''}`,
+        click: () => { void handleAvailableUpdate(); },
+      }];
+    case 'downloading':
+      return [{ label: 'Downloading Update...', enabled: false }];
+    case 'downloaded':
+      return [{
+        label: `Restart to Install${updateVersion ? ` v${updateVersion}` : ''}`,
+        click: installDownloadedUpdate,
+      }];
+    default:
+      return [{
+        label: 'Check for Updates',
+        click: () => { void checkForUpdates(true); },
+      }];
+  }
+}
+
+function showUpdateNotification(title: string, body: string, onClick?: () => void): void {
+  try {
+    activeUpdateNotification?.close();
+    const notification = new Notification({ title, body });
+    if (onClick) notification.on('click', onClick);
+    notification.once('close', () => {
+      if (activeUpdateNotification === notification) activeUpdateNotification = null;
+    });
+    activeUpdateNotification = notification;
+    notification.show();
+  } catch (err) {
+    electronLog.warn('Failed to show update notification:', err);
+  }
+}
+
+async function checkForUpdates(manual = false): Promise<void> {
+  if (!app.isPackaged) {
+    if (manual) {
+      showUpdateNotification(
+        'HRONOMANCER // UPDATE CHECK',
+        'Update checks are available in packaged builds.',
+      );
+    }
+    return;
+  }
+  if (updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'downloaded') return;
+
+  manualUpdateCheck = manual;
+  updateStatus = 'checking';
+  rebuildTrayMenu();
+
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    // Some package managers own their update lifecycle. Snap, for example,
+    // makes electron-updater return null without emitting update-not-available.
+    if (result === null && updateStatus === 'checking') {
+      const shouldNotify = manualUpdateCheck;
+      updateStatus = 'idle';
+      manualUpdateCheck = false;
+      rebuildTrayMenu();
+      if (shouldNotify) {
+        showUpdateNotification(
+          'HRONOMANCER // UPDATE CHECK',
+          'Updates for this package are managed by your system.',
+        );
+      }
+    }
+  } catch (err) {
+    // electron-updater also emits `error`; this catch prevents an unhandled
+    // rejection if a provider or network request fails.
+    electronLog.error('Failed to check for updates:', err);
+  }
+}
+
+async function downloadAvailableUpdate(): Promise<void> {
+  if (updateStatus !== 'available') return;
+  updateStatus = 'downloading';
+  rebuildTrayMenu();
+
+  try {
+    await autoUpdater.downloadUpdate();
+  } catch (err) {
+    electronLog.error('Failed to download update:', err);
+  }
+}
+
+async function handleAvailableUpdate(): Promise<void> {
+  // The current macOS release job is unsigned. Squirrel.Mac requires signing
+  // for self-installation, but update discovery itself still works, so direct
+  // macOS users to the release downloads instead of offering a broken install.
+  if (process.platform === 'darwin') {
+    const releaseUrl = updateVersion
+      ? `${RELEASES_URL}/tag/v${encodeURIComponent(updateVersion)}`
+      : RELEASES_URL;
+    await shell.openExternal(releaseUrl);
+    return;
+  }
+  await downloadAvailableUpdate();
+}
+
+function installDownloadedUpdate(): void {
+  if (updateStatus !== 'downloaded') return;
+  autoUpdater.quitAndInstall();
+}
+
+function setupAutoUpdater(): void {
+  autoUpdater.on('checking-for-update', () => {
+    updateStatus = 'checking';
+    rebuildTrayMenu();
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    updateStatus = 'available';
+    updateVersion = info.version;
+    manualUpdateCheck = false;
+    rebuildTrayMenu();
+    const updateAction = process.platform === 'darwin'
+      ? 'Click to open the release downloads.'
+      : 'Click to download it.';
+    showUpdateNotification(
+      'HRONOMANCER // UPDATE AVAILABLE',
+      `Version ${info.version} is available. ${updateAction}`,
+      () => { void handleAvailableUpdate(); },
+    );
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    const shouldNotify = manualUpdateCheck;
+    updateStatus = 'idle';
+    updateVersion = null;
+    manualUpdateCheck = false;
+    rebuildTrayMenu();
+    if (shouldNotify) {
+      showUpdateNotification(
+        'HRONOMANCER // UP TO DATE',
+        `You are running the latest version (${app.getVersion()}).`,
+      );
+    }
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    electronLog.info(`Update download: ${progress.percent.toFixed(1)}%`);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    updateStatus = 'downloaded';
+    updateVersion = info.version;
+    rebuildTrayMenu();
+    showUpdateNotification(
+      'HRONOMANCER // UPDATE READY',
+      `Version ${info.version} is ready. Click to restart and install it.`,
+      installDownloadedUpdate,
+    );
+  });
+
+  autoUpdater.on('error', (err) => {
+    const shouldNotify = manualUpdateCheck || updateStatus === 'downloading';
+    updateStatus = 'idle';
+    updateVersion = null;
+    manualUpdateCheck = false;
+    electronLog.error('Auto-updater error:', err);
+    rebuildTrayMenu();
+    if (shouldNotify) {
+      showUpdateNotification(
+        'HRONOMANCER // UPDATE ERROR',
+        'The update check failed. Please try again later.',
+      );
+    }
+  });
+
+  // Give the tray and overlay time to finish starting before the network check.
+  setTimeout(() => { void checkForUpdates(); }, 3000);
+}
+
 // ─── App Lifecycle ──────────────────────────────────────────────
 
 app.whenReady().then(() => {
@@ -967,6 +1165,7 @@ app.whenReady().then(() => {
   syncOverlays();
   setupInputMonitoring();
   registerHotkeys();
+  setupAutoUpdater();
 
   setInterval(updateActivityLevel, 100);
   setInterval(updatePresence, 1000);

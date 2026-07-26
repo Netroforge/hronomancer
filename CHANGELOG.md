@@ -1,11 +1,31 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 - 2026-07-26
+
+### Added
+
+- Automatic update checks on packaged-app startup, with native notifications
+  and tray actions to download/install supported packages or open the macOS
+  release downloads.
+
+### Improved
+
+- Release validation now requires the tag to match `package.json` and passes a
+  clean install, tests, build, and production dependency audit before creating
+  the draft release.
+- Linux Snap packaging now uses electron-builder's supported `snapcraft`
+  configuration on the stable core22 base.
 
 ### Fixed
 
 - Restored click-through overlays on Linux so effects no longer block the
   configuration window or other applications.
+- Restored clean installs and full type-checking by keeping Vite and TypeScript
+  on versions supported by the current Electron/Vue toolchain.
+- Prevented package-manager-owned update flows from leaving the tray stuck in
+  the checking state.
+- Avoided offering unsupported in-app installation from unsigned macOS builds;
+  update notifications now open the release-download handoff instead.
 
 ## 1.1.0 - 2026-07-26
 

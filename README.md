@@ -5,9 +5,9 @@ click-through layer over your screens — scanlines, glitch bursts, a live
 system-stats HUD, a Pomodoro timer, and a set of "ambient intelligence" effects
 that quietly react to what's happening on your machine.
 
-Everything runs **100% locally**. No accounts, no telemetry, no network calls,
-no recordings — screen/audio analysis happens entirely in memory on your
-computer and is never stored or sent anywhere.
+Screen/audio analysis runs **100% locally**. There are no accounts, telemetry,
+or recordings, and captured data is never stored or sent anywhere. Packaged
+builds only contact GitHub Releases to check for app updates.
 
 ## Features
 
@@ -26,6 +26,9 @@ computer and is never stored or sent anywhere.
   `MINIMAL`, `MAXIMUM`) that set a sensible baseline you can tweak from there.
 - **Launch at login** — start the overlay automatically (background) on user
   login.
+- **Automatic updates** — packaged builds check GitHub Releases on startup;
+  update actions stay under your control through notifications and the tray
+  menu. Unsigned macOS builds open the release downloads for manual install.
 - **Performance profiles** — choose `ECO`, `BALANCED`, or `SMOOTH` to trade
   screen-analysis responsiveness and animation frame rate for lower resource use.
 - **Global hotkeys** — toggle effects, switch themes, open config, and start a
@@ -101,9 +104,11 @@ Settings are stored per-display in the app's user-data folder
 
 ## Privacy
 
-Hronomancer does not require an account and never connects to the internet.
-Screen and audio analysis are performed locally for the visual effects only;
-nothing is logged, saved, or transmitted.
+Hronomancer does not require an account and sends no telemetry. Screen and audio
+analysis are performed locally for the visual effects only; captured data is
+never logged, saved, or transmitted. Packaged builds make a version-check
+request to GitHub Releases on startup and only download an update after you
+choose to do so.
 
 ## Support
 
