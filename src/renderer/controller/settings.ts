@@ -1,12 +1,10 @@
-import { app } from 'electron';
-import { join } from 'path';
-import { readFileSync, writeFileSync } from 'fs';
+import { invoke } from '@tauri-apps/api/core';
 import type {
   OverlayState,
   AttentionMode,
   DisplaySettings,
   PerformanceProfile,
-} from '../../src/renderer/shared/types';
+} from '../shared/types';
 import {
   THEMES,
   createDefaultState,
@@ -17,7 +15,7 @@ import {
   isGlitchThemeId,
   DISPLAY_SETTING_KEYS,
   HUD_LAYOUT_KEYS,
-} from '../../src/renderer/shared/types';
+} from '../shared/types';
 
 // A display's settings on disk. Same as the runtime DisplaySettings but the
 // colour theme is stored by id (resilient, compact) rather than as an object.
@@ -39,22 +37,19 @@ export interface PersistedSettings {
   performanceProfile: PerformanceProfile;
 }
 
-function settingsPath(): string {
-  return join(app.getPath('userData'), 'settings.json');
-}
-
-export function loadSettings(): Partial<PersistedSettings> | null {
+export async function loadSettings(): Promise<Partial<PersistedSettings> | null> {
   try {
-    const raw = readFileSync(settingsPath(), 'utf8');
+    const raw = await invoke<string | null>('load_settings');
+    if (!raw) return null;
     return JSON.parse(raw) as Partial<PersistedSettings>;
   } catch {
     return null; // no file yet or unreadable — fall back to defaults
   }
 }
 
-export function saveSettings(settings: PersistedSettings): void {
+export async function saveSettings(settings: PersistedSettings): Promise<void> {
   try {
-    writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+    await invoke('save_settings', { json: JSON.stringify(settings, null, 2) });
   } catch (err) {
     console.error('[Hronomancer] Failed to save settings:', err);
   }

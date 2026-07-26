@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to publish (for example, v1.2.0)
+        description: Existing version tag to publish (for example, v2.0.0)
         required: false
         type: string
   push:
@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare-release:
-    runs-on: ubuntu-latest
+  validate:
+    runs-on: ubuntu-22.04
     outputs:
       tag: ${{ steps.tag.outputs.value }}
     steps:
@@ -30,12 +30,12 @@ jobs:
           REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "A version tag such as v1.2.0 is required." >&2
+            echo "A version tag such as v2.0.0 is required." >&2
             exit 1
           fi
           echo "value=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout repository
+      - name: Checkout tagged source
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.value }}
@@ -46,118 +46,116 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Validate release
+      - name: Validate versions and frontend
         env:
           TAG: ${{ steps.tag.outputs.value }}
         run: |
           package_version="$(node -p "require('./package.json').version")"
-          if [[ "$TAG" != "v$package_version" ]]; then
-            echo "Tag $TAG does not match package.json version $package_version." >&2
-            exit 1
-          fi
+          tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
+          for version in "$package_version" "$tauri_version" "$cargo_version"; do
+            if [[ "$TAG" != "v$version" ]]; then
+              echo "Tag $TAG does not match project version $version." >&2
+              exit 1
+            fi
+          done
           npm ci
           npm test
           npm run build
           npm audit --omit=dev
 
-      - name: Create a single draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.value }}
-        run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; reusing it."
-          else
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --draft \
-              --generate-notes \
-              --title "Hronomancer ${TAG#v}"
-          fi
-
-  build-and-publish-linux:
-    needs: prepare-release
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  build:
+    needs: validate
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+            rust-targets: ''
+            apple_signing_identity: ''
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            apple_signing_identity: '-'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            apple_signing_identity: '-'
+          - platform: windows-latest
+            args: ''
+            rust-targets: ''
+            apple_signing_identity: ''
+    runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout repository
+      - name: Checkout tagged source
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare-release.outputs.tag }}
+          ref: ${{ needs.validate.outputs.tag }}
 
-      - name: Installing Node
+      - name: Install Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
-      - name: Build and publish
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Install Linux native dependencies
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
-          sudo apt-get update && sudo apt-get install -y rpm
-          sudo snap install snapcraft --classic
-          npm ci
-          npm run publish:linux
+          sudo apt-get update
+          sudo apt-get install -y \
+            file \
+            libayatana-appindicator3-dev \
+            libclang-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libpipewire-0.3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libxcb1-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxtst-dev \
+            patchelf \
+            rpm \
+            xdg-utils
 
-  build-and-publish-mac:
-    needs: prepare-release
-    runs-on: macos-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare-release.outputs.tag }}
+      - name: Install frontend dependencies
+        run: npm ci
 
-      - name: Installing Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Build and publish
+      - name: Build, sign, and upload Tauri bundles
+        uses: tauri-apps/tauri-action@v1
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          npm ci
-          npm run publish:mac
-
-  build-and-publish-win:
-    needs: prepare-release
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          ref: ${{ needs.prepare-release.outputs.tag }}
+          tagName: ${{ needs.validate.outputs.tag }}
+          releaseName: Hronomancer v__VERSION__
+          generateReleaseNotes: true
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
 
-      - name: Installing Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Build and publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          npm ci
-          npm run publish:win
-
-  hashes:
+  publish:
     needs:
-      - prepare-release
-      - build-and-publish-linux
-      - build-and-publish-mac
-      - build-and-publish-win
-    runs-on: ubuntu-latest
+      - validate
+      - build
+    runs-on: ubuntu-22.04
     steps:
-      - name: Download release assets, generate sha256 hashes, upload to release
+      - name: Verify updater metadata, add hashes, and publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare-release.outputs.tag }}
+          TAG: ${{ needs.validate.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir assets
@@ -166,13 +164,23 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --pattern '*' \
             --skip-existing
-          for metadata in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
-            if [[ ! -f "$metadata" ]]; then
-              echo "Required updater metadata $metadata was not published." >&2
-              exit 1
-            fi
-          done
-          # Exclude any existing hashes file so re-runs don't hash themselves.
+          test -s latest.json
+          node -e '
+            const fs = require("node:fs");
+            const metadata = JSON.parse(fs.readFileSync("latest.json", "utf8"));
+            const required = [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-x86_64",
+              "windows-x86_64",
+            ];
+            for (const platform of required) {
+              const entry = metadata.platforms?.[platform];
+              if (!entry?.url || !entry?.signature) {
+                throw new Error(`latest.json is missing ${platform}`);
+              }
+            }
+          '
           find . -maxdepth 1 -type f ! -name 'hashes.txt' -print0 \
             | sort -z \
             | xargs -0 sha256sum > ../hashes.txt

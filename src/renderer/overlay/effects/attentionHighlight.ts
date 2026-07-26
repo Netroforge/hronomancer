@@ -8,11 +8,11 @@ import { legibleText, clearShadow } from './layout';
 // pulse, notification radar, cinema mode) — they just don't get a bracket.
 const MAX_SHOWN = 2;
 
-// `video` gets no bracket (cinema mode's job is to leave playback alone) and
-// `complete` is drawn by the task-done pulse instead — so neither competes for a
-// highlight slot here.
+// Only high-confidence semantic events get a bracket. Framing raw motion or
+// ordinary text turns normal editor/video activity into large distracting
+// rectangles, and can feed the overlay's own pixels back into screen analysis.
 function isHighlightable(type: AttentionType): boolean {
-  return type !== 'video' && type !== 'complete';
+  return type === 'notification' || type === 'alert';
 }
 
 // Per-type accent, so the *colour* pre-attentively encodes what was detected.

@@ -1,5 +1,6 @@
 import { createDefaultState } from '../shared/types';
 import type { CyberAPI, PerformanceProfile } from '../shared/types';
+import { installTauriBridge } from '../shared/tauriBridge';
 import { CyberEngine } from './effects/engine';
 
 declare global {
@@ -10,19 +11,24 @@ declare global {
 
 const canvas = document.getElementById('cyberCanvas') as HTMLCanvasElement;
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-console.log(`[Hronomancer] Canvas sized to ${canvas.width}x${canvas.height}`);
-
-window.addEventListener('resize', () => {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-});
+installTauriBridge();
 
 let displayBounds = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 
+function resizeCanvas(): void {
+  canvas.width = displayBounds.width;
+  canvas.height = displayBounds.height;
+  canvas.style.width = `${displayBounds.width}px`;
+  canvas.style.height = `${displayBounds.height}px`;
+  console.log(`[Hronomancer] Canvas sized to ${canvas.width}x${canvas.height}`);
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
 window.cyberAPI?.onDisplayInfo((info) => {
   displayBounds = info.bounds;
+  resizeCanvas();
   console.log(`[Hronomancer] Display ${info.displayId} bounds: ${info.bounds.width}x${info.bounds.height}`);
 });
 

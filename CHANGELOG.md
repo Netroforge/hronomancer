@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.0.0 - 2026-07-26
+
+### Changed
+
+- Replaced the Electron runtime with Tauri 2 and a native Rust controller,
+  reducing the app from a Chromium process tree to the operating system's
+  WebView plus one Hronomancer process.
+- Moved monitor discovery, transparent overlay windows, click-through input,
+  global input, shortcuts, tray integration, system stats, autostart,
+  notifications, settings, and screen capture into the native controller.
+- Replaced Electron Builder packaging with signed Tauri bundles and a
+  multi-platform GitHub release pipeline for Linux, macOS Intel/Apple Silicon,
+  and Windows.
+
+### Added
+
+- Signed Tauri updater artifacts and cross-platform `latest.json` metadata for
+  automatic startup checks and user-controlled installation.
+- A reproducible Linux build container and an X11 verifier for monitor geometry
+  and click-through input regions.
+- Regression coverage ensuring each display keeps an independent screen
+  attention baseline.
+
+### Fixed
+
+- Use each monitor's exact physical origin and dimensions, including negative
+  coordinates and mixed multi-monitor arrangements.
+- Analyze and broadcast screen state independently per display instead of
+  applying the primary screen's regions to every overlay.
+- Keep Linux overlays outside normal window-manager placement and give them an
+  empty X11 input region so they cannot intercept desktop clicks.
+- Prevent ordinary editor text and motion from producing large tracking boxes.
+- Treat CPU/RAM as visual pressure only above 70% and rate-limit motion-driven
+  glitches, preventing normal memory use or overlay feedback from flooding the
+  desktop with HUD bars.
+
 ## 1.2.0 - 2026-07-26
 
 ### Added
