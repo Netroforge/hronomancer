@@ -165,9 +165,21 @@ jobs:
             --pattern '*' \
             --skip-existing
           test -s latest.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
           node -e '
             const fs = require("node:fs");
             const metadata = JSON.parse(fs.readFileSync("latest.json", "utf8"));
+            const release = JSON.parse(fs.readFileSync("release.json", "utf8"));
+            const publicUrls = new Map(
+              release.assets.map((asset) => [asset.url, asset.browser_download_url]),
+            );
+            for (const entry of Object.values(metadata.platforms ?? {})) {
+              const publicUrl = publicUrls.get(entry.url);
+              if (!publicUrl) {
+                throw new Error(`No public download URL for ${entry.url}`);
+              }
+              entry.url = publicUrl;
+            }
             const required = [
               "darwin-aarch64",
               "darwin-x86_64",
@@ -179,8 +191,13 @@ jobs:
               if (!entry?.url || !entry?.signature) {
                 throw new Error(`latest.json is missing ${platform}`);
               }
+              if (!entry.url.includes(`/releases/download/${process.env.TAG}/`)) {
+                throw new Error(`latest.json has a non-public URL for ${platform}`);
+              }
             }
+            fs.writeFileSync("latest.json", `${JSON.stringify(metadata, null, 2)}\n`);
           '
+          rm release.json
           find . -maxdepth 1 -type f ! -name 'hashes.txt' -print0 \
             | sort -z \
             | xargs -0 sha256sum > ../hashes.txt
