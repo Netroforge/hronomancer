@@ -25,7 +25,7 @@ jobs:
 
       - name: Build and publish
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update && sudo apt-get install -y rpm
           sudo snap install snapcraft --classic
@@ -47,7 +47,7 @@ jobs:
 
       - name: Build and publish
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm ci
           npm run publish:mac
@@ -67,7 +67,7 @@ jobs:
 
       - name: Build and publish
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm ci
           npm run publish:win
@@ -82,7 +82,7 @@ jobs:
     steps:
       - name: Download release assets, generate sha256 hashes, upload to release
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
