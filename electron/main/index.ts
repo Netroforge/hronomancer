@@ -3,7 +3,14 @@ import type { NativeImage } from 'electron';
 import { join } from 'path';
 import { uIOhook } from 'uiohook-napi';
 import { deflateSync } from 'zlib';
-import type { OverlayState, InputMouseData, AttentionMode, HudLayout, DisplaySettings } from '../../src/renderer/shared/types';
+import type {
+  OverlayState,
+  InputMouseData,
+  AttentionMode,
+  HudLayout,
+  DisplaySettings,
+  PerformanceProfile,
+} from '../../src/renderer/shared/types';
 import {
   createDefaultState,
   THEMES,
@@ -27,6 +34,14 @@ import { loadSettings, saveSettings, extractSettings, applySettings } from './se
 // re-add `--disable-gpu-compositing` (and, as a last resort,
 // `app.disableHardwareAcceleration()`) below.
 app.commandLine.appendSwitch('--enable-transparent-visuals');
+
+// Keep the overlay GPU-accelerated. On Linux, Chromium frequently blocklists the
+// GPU driver (Nouveau, old Mesa, VMs), which silently forces software
+// rasterization — turning the full-screen canvas into a CPU hog (choppy
+// animations, high CPU) and disabling hardware acceleration. Ignoring the
+// blocklist lets the real GPU do the compositing + canvas rasterization.
+app.commandLine.appendSwitch('--ignore-gpu-blocklist');
+app.commandLine.appendSwitch('--enable-gpu-rasterization');
 
 // The overlay analyses mic audio via Web Audio; it never receives a user
 // gesture (it's click-through), so allow the AudioContext to run regardless.
@@ -343,7 +358,9 @@ function createConfigWindow(): void {
   configWindow = new BrowserWindow({
     width: 420,
     height: 600,
-    resizable: false,
+    minWidth: 390,
+    minHeight: 480,
+    resizable: true,
     frame: false,
     backgroundColor: '#0a0a0a',
     webPreferences: {
@@ -500,8 +517,8 @@ function togglePomodoro(): void {
   } else {
     state.pomodoro.active = true;
     state.pomodoro.phase = 'work';
-    state.pomodoro.remainingSeconds = 25 * 60;
-    state.pomodoro.totalSeconds = 25 * 60;
+    state.pomodoro.remainingSeconds = state.pomodoroWorkMinutes * 60;
+    state.pomodoro.totalSeconds = state.pomodoroWorkMinutes * 60;
   }
   broadcastState();
 }
@@ -512,13 +529,13 @@ function updatePomodoro(): void {
   if (state.pomodoro.remainingSeconds <= 0) {
     if (state.pomodoro.phase === 'work') {
       state.pomodoro.phase = 'break';
-      state.pomodoro.remainingSeconds = 5 * 60;
-      state.pomodoro.totalSeconds = 5 * 60;
-      triggerNotification('HRONOMANCER', 'Break time! Take 5 minutes.');
+      state.pomodoro.remainingSeconds = state.pomodoroBreakMinutes * 60;
+      state.pomodoro.totalSeconds = state.pomodoroBreakMinutes * 60;
+      triggerNotification('HRONOMANCER', `Break time! Take ${state.pomodoroBreakMinutes} minutes.`);
     } else {
       state.pomodoro.phase = 'work';
-      state.pomodoro.remainingSeconds = 25 * 60;
-      state.pomodoro.totalSeconds = 25 * 60;
+      state.pomodoro.remainingSeconds = state.pomodoroWorkMinutes * 60;
+      state.pomodoro.totalSeconds = state.pomodoroWorkMinutes * 60;
       triggerNotification('HRONOMANCER', 'Work session starting!');
     }
   }
@@ -694,13 +711,15 @@ async function analyzeScreen(): Promise<boolean> {
 }
 
 // ─── Adaptive capture cadence ───────────────────────────────────
-// Idle at 2 Hz (cheap), but burst to ~8 Hz for a short window whenever the
-// screen is actively changing, so transient popups and the moment a long task
-// finishes are caught promptly — without paying the capture cost while nothing
-// on screen is moving.
-const CAPTURE_IDLE_MS = 500;
-const CAPTURE_FAST_MS = 120;
+// The selected performance profile controls the idle/active sampling rates.
+// Each profile still bursts briefly when the screen is changing, catching
+// transient popups without paying that capture cost continuously.
 const CAPTURE_BURST_MS = 2000;
+const CAPTURE_INTERVALS: Record<PerformanceProfile, { idle: number; fast: number }> = {
+  eco: { idle: 1000, fast: 250 },
+  balanced: { idle: 500, fast: 120 },
+  smooth: { idle: 250, fast: 80 },
+};
 let captureTimer: ReturnType<typeof setTimeout> | null = null;
 let captureFastUntil = 0;
 
@@ -710,7 +729,8 @@ async function captureLoop(): Promise<void> {
     active = await analyzeScreen();
   } catch {}
   if (active) captureFastUntil = Date.now() + CAPTURE_BURST_MS;
-  const interval = Date.now() < captureFastUntil ? CAPTURE_FAST_MS : CAPTURE_IDLE_MS;
+  const cadence = CAPTURE_INTERVALS[state.performanceProfile];
+  const interval = Date.now() < captureFastUntil ? cadence.fast : cadence.idle;
   captureTimer = setTimeout(captureLoop, interval);
 }
 
@@ -743,16 +763,47 @@ ipcMain.on('set-config', (_e, config: Record<string, unknown>) => {
   // Split the flattened payload into: GLOBAL fields (master toggle, attention,
   // per-display enable flags) and the per-display SETTINGS patch. Nested runtime
   // state (attention.regions/prevFrame, live pomodoro) is never overwritten.
-  const { attention, displays, effectsEnabled, targetDisplayId, applyToAll } = config as {
+  const {
+    attention,
+    displays,
+    effectsEnabled,
+    targetDisplayId,
+    applyToAll,
+    launchAtLogin,
+    pomodoroWorkMinutes,
+    pomodoroBreakMinutes,
+    performanceProfile,
+  } = config as {
     attention?: Partial<OverlayState['attention']>;
     displays?: { id: number; enabled: boolean }[];
     effectsEnabled?: boolean;
     targetDisplayId?: number;
     applyToAll?: boolean;
+    launchAtLogin?: boolean;
+    pomodoroWorkMinutes?: number;
+    pomodoroBreakMinutes?: number;
+    performanceProfile?: PerformanceProfile;
   };
 
   // Global master toggle.
   if (typeof effectsEnabled === 'boolean') state.effectsEnabled = effectsEnabled;
+
+  // Global launch-at-login (persisted) — applied immediately to the OS login item.
+  if (typeof launchAtLogin === 'boolean') {
+    state.launchAtLogin = launchAtLogin;
+    applyLoginItem();
+  }
+
+  // Global pomodoro durations (persisted, not per-display).
+  if (typeof pomodoroWorkMinutes === 'number') {
+    state.pomodoroWorkMinutes = Math.min(120, Math.max(1, Math.round(pomodoroWorkMinutes)));
+  }
+  if (typeof pomodoroBreakMinutes === 'number') {
+    state.pomodoroBreakMinutes = Math.min(60, Math.max(1, Math.round(pomodoroBreakMinutes)));
+  }
+  if (performanceProfile === 'eco' || performanceProfile === 'balanced' || performanceProfile === 'smooth') {
+    state.performanceProfile = performanceProfile;
+  }
 
   // Global per-display enable flags (which screens show overlays at all).
   if (Array.isArray(displays)) {
@@ -818,8 +869,22 @@ ipcMain.on('open-external', (_e, url: string) => {
 ipcMain.on('start-pomodoro', () => { togglePomodoro(); });
 
 ipcMain.on('set-pomodoro-work', (_e, minutes: number) => {
-  state.pomodoro.totalSeconds = minutes * 60;
-  state.pomodoro.remainingSeconds = minutes * 60;
+  state.pomodoroWorkMinutes = Math.min(120, Math.max(1, Math.round(minutes)));
+  // Only retarget the live timer when idle, so dragging the slider mid-session
+  // doesn't yank the countdown the user is watching.
+  if (!state.pomodoro.active) {
+    state.pomodoro.totalSeconds = state.pomodoroWorkMinutes * 60;
+    state.pomodoro.remainingSeconds = state.pomodoroWorkMinutes * 60;
+  }
+  broadcastState();
+});
+
+ipcMain.on('set-pomodoro-break', (_e, minutes: number) => {
+  state.pomodoroBreakMinutes = Math.min(60, Math.max(1, Math.round(minutes)));
+  if (state.pomodoro.active && state.pomodoro.phase === 'break') {
+    state.pomodoro.totalSeconds = state.pomodoroBreakMinutes * 60;
+    state.pomodoro.remainingSeconds = state.pomodoroBreakMinutes * 60;
+  }
   broadcastState();
 });
 
@@ -832,6 +897,22 @@ function checkBootComplete(): void {
     // displays for the boot animation.
     syncOverlays();
     broadcastState();
+  }
+}
+
+// ─── Launch at Login ────────────────────────────────────────────
+
+// Reflect `state.launchAtLogin` into the OS login items so Hronomancer starts
+// automatically on user login (the usual expectation for an always-on overlay).
+function applyLoginItem(): void {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: state.launchAtLogin,
+      path: process.execPath,
+      args: [],
+    });
+  } catch (err) {
+    console.error('[Hronomancer] Failed to set login item:', err);
   }
 }
 
@@ -854,6 +935,9 @@ app.whenReady().then(() => {
     applySettings(state, displaySettings, persisted);
     console.log('[Hronomancer] Loaded saved settings');
   }
+
+  // Honour a persisted launch-at-login choice before the app is interactive.
+  applyLoginItem();
 
   try {
     tray = new Tray(createTrayIcon());

@@ -6,9 +6,9 @@ Only the latest release receives security updates.
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Textonom, please report it privately by opening a GitHub Security Advisory at:
+If you discover a security vulnerability in Hronomancer, please report it privately by opening a GitHub Security Advisory at:
 
-https://github.com/Netroforge/textonom/security/advisories/new
+https://github.com/Netroforge/hronomancer/security/advisories/new
 
 Please **do not** open a public issue for security vulnerabilities.
 
@@ -18,9 +18,9 @@ We will acknowledge your report within 48 hours and work on a fix. Once the fix 
 
 Security reports are welcome for:
 
-- Code execution vulnerabilities in the transformation engine (the main security-sensitive surface)
-- Remote code execution via update process
-- Data leakage through clipboard or file operations
+- Code execution vulnerabilities in the overlay or screen-analysis engine
+- Unexpected screen or microphone data persistence or transmission
+- Global input hook or native module vulnerabilities
 - IPC bridge vulnerabilities
 
 Non-security bugs should be filed as regular GitHub issues.

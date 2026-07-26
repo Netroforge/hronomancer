@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia';
-import type { OverlayState, DisplayInfo, PomodoroState, HudLayout, GlitchConfig, AttentionMode, FocusTrigger } from '../shared/types';
-import { THEMES, getDefaultGlitchThemeId, createDefaultGlitchConfig } from '../shared/types';
+import type {
+  OverlayState,
+  DisplayInfo,
+  PomodoroState,
+  HudLayout,
+  GlitchConfig,
+  AttentionMode,
+  FocusTrigger,
+  PerformanceProfile,
+} from '../shared/types';
+import { THEMES, getDefaultGlitchThemeId, createDefaultGlitchConfig, PRESETS, type PresetValues } from '../shared/types';
 
 // Non-reactive sync bookkeeping kept at module scope.
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +80,11 @@ export const useOverlayStore = defineStore('overlay', {
     colorThemeId: 'cyber',
     glitchThemeId: getDefaultGlitchThemeId(),
     pomodoro: { active: false, phase: 'work', totalSeconds: 25 * 60, remainingSeconds: 25 * 60 } as PomodoroState,
+    pomodoroWorkMinutes: 25,
+    pomodoroBreakMinutes: 5,
+    launchAtLogin: false,
+    performanceProfile: 'balanced' as PerformanceProfile,
+    activePresetId: '',
     attentionEnabled: true,
     attentionMode: 'auto' as AttentionMode,
     attentionSensitivity: 0.5,
@@ -120,6 +134,10 @@ export const useOverlayStore = defineStore('overlay', {
           displays: this.displays.map((d) => ({ id: d.id, enabled: d.enabled })),
           colorTheme: THEMES.find((t) => t.id === this.colorThemeId) || THEMES[0],
           glitchTheme: this.glitchThemeId,
+          pomodoroWorkMinutes: this.pomodoroWorkMinutes,
+          pomodoroBreakMinutes: this.pomodoroBreakMinutes,
+          launchAtLogin: this.launchAtLogin,
+          performanceProfile: this.performanceProfile,
           attention: {
             enabled: this.attentionEnabled,
             mode: this.attentionMode,
@@ -178,6 +196,10 @@ export const useOverlayStore = defineStore('overlay', {
       if (s.layout) this.layout = cloneLayout(s.layout);
       this.colorThemeId = s.colorTheme?.id || 'cyber';
       this.glitchThemeId = s.glitchTheme || getDefaultGlitchThemeId();
+      this.pomodoroWorkMinutes = s.pomodoroWorkMinutes ?? 25;
+      this.pomodoroBreakMinutes = s.pomodoroBreakMinutes ?? 5;
+      this.launchAtLogin = s.launchAtLogin ?? false;
+      this.performanceProfile = s.performanceProfile ?? 'balanced';
       this.attentionEnabled = s.attention?.enabled ?? true;
       this.attentionMode = s.attention?.mode ?? 'auto';
       this.attentionSensitivity = s.attention?.sensitivity ?? 0.5;
@@ -218,6 +240,60 @@ export const useOverlayStore = defineStore('overlay', {
     /** Copy the current settings to every display at once. */
     applyToAllDisplays() {
       this.sync(true);
+    },
+
+    /** One-click starting point: write a preset's values into the store and
+     * push them to every display at once. */
+    applyPreset(id: string) {
+      const preset = PRESETS.find((p) => p.id === id);
+      if (!preset) return;
+      this.activePresetId = id;
+      const v = preset.values as PresetValues;
+      if (v.intensity !== undefined) this.intensity = v.intensity;
+      if (v.glitchFrequency !== undefined) this.glitchFrequency = v.glitchFrequency;
+      if (v.colorThemeId !== undefined) this.colorThemeId = v.colorThemeId;
+      if (v.glitchThemeId !== undefined) this.glitchThemeId = v.glitchThemeId;
+      if (v.showScanlines !== undefined) this.showScanlines = v.showScanlines;
+      if (v.showGlitches !== undefined) this.showGlitches = v.showGlitches;
+      if (v.showCursorTrail !== undefined) this.showCursorTrail = v.showCursorTrail;
+      if (v.showTargetHighlight !== undefined) this.showTargetHighlight = v.showTargetHighlight;
+      if (v.showClock !== undefined) this.showClock = v.showClock;
+      if (v.showStatsHud !== undefined) this.showStatsHud = v.showStatsHud;
+      if (v.showPomodoro !== undefined) this.showPomodoro = v.showPomodoro;
+      if (v.showAudioViz !== undefined) this.showAudioViz = v.showAudioViz;
+      if (v.showStatus !== undefined) this.showStatus = v.showStatus;
+      if (v.showSysTag !== undefined) this.showSysTag = v.showSysTag;
+      if (v.showVignette !== undefined) this.showVignette = v.showVignette;
+      if (v.showEdgeGlow !== undefined) this.showEdgeGlow = v.showEdgeGlow;
+      if (v.showActivityBar !== undefined) this.showActivityBar = v.showActivityBar;
+      if (v.showColorFlash !== undefined) this.showColorFlash = v.showColorFlash;
+      if (v.showNotificationFlash !== undefined) this.showNotificationFlash = v.showNotificationFlash;
+      if (v.systemLoadGlow !== undefined) this.systemLoadGlow = v.systemLoadGlow;
+      if (v.showFocusRing !== undefined) this.showFocusRing = v.showFocusRing;
+      if (v.breakReminders !== undefined) this.breakReminders = v.breakReminders;
+      if (v.presenceDimming !== undefined) this.presenceDimming = v.presenceDimming;
+      if (v.showTaskComplete !== undefined) this.showTaskComplete = v.showTaskComplete;
+      if (v.showNotificationRadar !== undefined) this.showNotificationRadar = v.showNotificationRadar;
+      if (v.focusSpotlight !== undefined) this.focusSpotlight = v.focusSpotlight;
+      if (v.focusDimStrength !== undefined) this.focusDimStrength = v.focusDimStrength;
+      if (v.focusTrigger !== undefined) this.focusTrigger = v.focusTrigger;
+      if (v.cinemaMode !== undefined) this.cinemaMode = v.cinemaMode;
+      if (v.showSignalLog !== undefined) this.showSignalLog = v.showSignalLog;
+      if (v.showSessionTime !== undefined) this.showSessionTime = v.showSessionTime;
+      if (v.layout) this.layout = cloneLayout(v.layout);
+      this.sync(true);
+    },
+
+    setPomodoroWork(minutes: number) {
+      this.pomodoroWorkMinutes = minutes;
+      window.cyberAPI?.setPomodoroWork(minutes);
+      this.sync();
+    },
+
+    setPomodoroBreak(minutes: number) {
+      this.pomodoroBreakMinutes = minutes;
+      window.cyberAPI?.setPomodoroBreak(minutes);
+      this.sync();
     },
 
     toggleDisplay(displayId: number) {

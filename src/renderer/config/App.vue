@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue';
-import type { CyberAPI, HudSide, DisplayInfo } from '../shared/types';
-import { THEMES, GLITCH_THEMES, GLITCH_PARAMS } from '../shared/types';
+import type { CyberAPI, HudSide, DisplayInfo, PerformanceProfile } from '../shared/types';
+import { THEMES, GLITCH_THEMES, GLITCH_PARAMS, PRESETS } from '../shared/types';
 import { useOverlayStore } from './store';
 
 type LayoutKey = 'clock' | 'statsHud' | 'pomodoro' | 'status' | 'sysTag' | 'signalLog' | 'sessionTime';
@@ -19,8 +19,8 @@ const LAYOUT_ELEMENTS: { key: LayoutKey; label: string }[] = [
   { key: 'sessionTime', label: 'Session Time' },
 ];
 
-// Placeholder support link — swap for your real Ko-fi / Buy Me a Coffee handle.
-const SUPPORT_URL = 'https://buymeacoffee.com/hronomancer';
+// Support / donation link — matches the handles declared in .github/FUNDING.yml.
+const SUPPORT_URL = 'https://ko-fi.com/netroforge';
 
 const SIDES: { key: HudSide; label: string }[] = [
   { key: 'top', label: 'TOP' },
@@ -108,6 +108,23 @@ function startPomodoro(): void {
   window.cyberAPI?.startPomodoro();
 }
 
+function applyPreset(id: string): void {
+  config.applyPreset(id);
+}
+
+function setPomodoroWork(minutes: number): void {
+  config.setPomodoroWork(Math.round(minutes));
+}
+
+function setPomodoroBreak(minutes: number): void {
+  config.setPomodoroBreak(Math.round(minutes));
+}
+
+function setPerformanceProfile(profile: PerformanceProfile): void {
+  config.performanceProfile = profile;
+  sync();
+}
+
 function openSupport(): void {
   window.cyberAPI?.openExternal(SUPPORT_URL);
 }
@@ -143,27 +160,50 @@ onMounted(() => {
       <button class="close-btn" @click.stop="closeWindow">X</button>
     </div>
     <div class="content">
-      <div
+      <button
+        type="button"
         class="master-toggle"
         :class="config.effectsEnabled ? 'on' : 'off'"
+        :aria-pressed="config.effectsEnabled"
         @click="toggleMaster"
       >
         <span>{{ config.effectsEnabled ? '[ SYSTEM: ACTIVE ]' : '[ SYSTEM: OFFLINE ]' }}</span>
+      </button>
+
+      <div class="section">
+        <div class="section-title">/// PRESETS ///</div>
+        <div class="preset-grid">
+          <button
+            v-for="preset in PRESETS"
+            :key="preset.id"
+            type="button"
+            class="preset-card"
+            :class="{ active: config.activePresetId === preset.id }"
+            :aria-pressed="config.activePresetId === preset.id"
+            @click="applyPreset(preset.id)"
+          >
+            <span class="preset-name">{{ preset.name }}</span>
+            <span class="preset-desc">{{ preset.description }}</span>
+          </button>
+        </div>
+        <div class="info-text">One-click starting points. Applies to every display and saves instantly — tweak from there.</div>
       </div>
 
       <div class="section" v-if="config.displays.length > 1">
         <div class="section-title">/// EDITING DISPLAY ///</div>
         <div class="display-tabs">
-          <div
+          <button
             v-for="(d, i) in config.displays"
             :key="d.id"
+            type="button"
             class="display-tab"
             :class="{ active: config.selectedDisplayId === d.id }"
+            :aria-pressed="config.selectedDisplayId === d.id"
             @click="selectDisplay(d.id)"
           >
             <span class="dt-num">D{{ i + 1 }}</span>
             <span class="dt-res">{{ displayTabLabel(d) }}</span>
-          </div>
+          </button>
         </div>
         <button class="apply-all-btn" @click="applyToAll">⇱ APPLY TO ALL DISPLAYS</button>
         <div class="info-text">Theme, effects, widgets and glitch settings below apply to the selected display.</div>
@@ -172,11 +212,13 @@ onMounted(() => {
       <div class="section">
         <div class="section-title">/// COLOR THEME ///</div>
         <div class="theme-grid">
-          <div
+          <button
             v-for="theme in THEMES"
             :key="theme.id"
+            type="button"
             class="theme-card"
             :class="{ active: config.colorThemeId === theme.id }"
+            :aria-pressed="config.colorThemeId === theme.id"
             @click="setColorTheme(theme.id)"
           >
             <div class="theme-preview">
@@ -185,18 +227,20 @@ onMounted(() => {
               <span class="tp" :style="{ background: theme.colors.accent }"></span>
             </div>
             <span class="theme-name">{{ theme.name }}</span>
-          </div>
+          </button>
         </div>
       </div>
 
       <div class="section">
         <div class="section-title">/// GLITCH STYLE ///</div>
         <div class="theme-grid">
-          <div
+          <button
             v-for="glitch in GLITCH_THEMES"
             :key="glitch.id"
+            type="button"
             class="theme-card"
             :class="{ active: config.glitchThemeId === glitch.id }"
+            :aria-pressed="config.glitchThemeId === glitch.id"
             @click="setGlitchTheme(glitch.id)"
           >
             <div class="theme-preview">
@@ -205,7 +249,7 @@ onMounted(() => {
               <span class="tp" :style="{ background: glitch.swatch[2] }"></span>
             </div>
             <span class="theme-name">{{ glitch.name }}</span>
-          </div>
+          </button>
         </div>
 
         <div class="glitch-params">
@@ -346,13 +390,15 @@ onMounted(() => {
           <div class="layout-head">
             <label>{{ el.label }}</label>
             <div class="side-grid">
-              <div
+              <button
                 v-for="side in SIDES"
                 :key="side.key"
+                type="button"
                 class="side-btn"
                 :class="{ active: config.layout[el.key].side === side.key }"
+                :aria-pressed="config.layout[el.key].side === side.key"
                 @click="setSide(el.key, side.key)"
-              >{{ side.label }}</div>
+              >{{ side.label }}</button>
             </div>
           </div>
           <div class="slider-row">
@@ -381,6 +427,27 @@ onMounted(() => {
           <label>Glitch Frequency <span class="value">{{ (config.glitchFrequency * 100).toFixed(1) }}%</span></label>
           <input type="range" min="0.005" max="0.1" step="0.005" :value="config.glitchFrequency" @input="config.glitchFrequency = parseFloat(($event.target as HTMLInputElement).value); sync()">
         </div>
+
+        <div class="toggle-row">
+          <label><span class="color-tag green"></span>Launch at Login <span class="mic-note">(background)</span></label>
+          <div class="toggle" :class="{ active: config.launchAtLogin }" @click="config.launchAtLogin = !config.launchAtLogin; sync()" />
+        </div>
+
+        <div class="setting-label">Performance Profile</div>
+        <div class="mode-grid performance-grid">
+          <button
+            v-for="profile in (['eco', 'balanced', 'smooth'] as PerformanceProfile[])"
+            :key="profile"
+            type="button"
+            class="mode-btn"
+            :class="{ active: config.performanceProfile === profile }"
+            @click="setPerformanceProfile(profile)"
+          >{{ profile.toUpperCase() }}</button>
+        </div>
+        <div class="info-text">
+          ECO minimizes idle CPU/GPU use, BALANCED is the recommended default,
+          and SMOOTH favors faster animation and screen-assist response.
+        </div>
       </div>
 
       <div class="section">
@@ -390,7 +457,24 @@ onMounted(() => {
           <span class="pomodoro-time">{{ Math.floor(config.pomodoro.remainingSeconds / 60) }}:{{ String(config.pomodoro.remainingSeconds % 60).padStart(2, '0') }}</span>
           <button class="pomodoro-btn" @click="startPomodoro">STOP</button>
         </div>
-        <button v-else class="pomodoro-btn start" @click="startPomodoro">START 25 MIN</button>
+        <button v-else class="pomodoro-btn start" @click="startPomodoro">START {{ config.pomodoroWorkMinutes }} MIN</button>
+
+        <div class="slider-row">
+          <label>Work Length <span class="value">{{ config.pomodoroWorkMinutes }} min</span></label>
+          <input
+            type="range" min="5" max="90" step="5"
+            :value="config.pomodoroWorkMinutes"
+            @input="setPomodoroWork(parseFloat(($event.target as HTMLInputElement).value))"
+          >
+        </div>
+        <div class="slider-row">
+          <label>Break Length <span class="value">{{ config.pomodoroBreakMinutes }} min</span></label>
+          <input
+            type="range" min="1" max="30" step="1"
+            :value="config.pomodoroBreakMinutes"
+            @input="setPomodoroBreak(parseFloat(($event.target as HTMLInputElement).value))"
+          >
+        </div>
       </div>
 
       <div class="section">
@@ -408,11 +492,11 @@ onMounted(() => {
           </div>
 
           <div class="mode-grid">
-            <div class="mode-btn" :class="{ active: config.attentionMode === 'auto' }" @click="config.attentionMode = 'auto'; sync()">AUTO</div>
-            <div class="mode-btn" :class="{ active: config.attentionMode === 'notification' }" @click="config.attentionMode = 'notification'; sync()">NOTIF</div>
-            <div class="mode-btn" :class="{ active: config.attentionMode === 'motion' }" @click="config.attentionMode = 'motion'; sync()">MOTION</div>
-            <div class="mode-btn" :class="{ active: config.attentionMode === 'contrast' }" @click="config.attentionMode = 'contrast'; sync()">CONTRAST</div>
-            <div class="mode-btn" :class="{ active: config.attentionMode === 'color' }" @click="config.attentionMode = 'color'; sync()">COLOR</div>
+            <button type="button" class="mode-btn" :class="{ active: config.attentionMode === 'auto' }" :aria-pressed="config.attentionMode === 'auto'" @click="config.attentionMode = 'auto'; sync()">AUTO</button>
+            <button type="button" class="mode-btn" :class="{ active: config.attentionMode === 'notification' }" :aria-pressed="config.attentionMode === 'notification'" @click="config.attentionMode = 'notification'; sync()">NOTIF</button>
+            <button type="button" class="mode-btn" :class="{ active: config.attentionMode === 'motion' }" :aria-pressed="config.attentionMode === 'motion'" @click="config.attentionMode = 'motion'; sync()">MOTION</button>
+            <button type="button" class="mode-btn" :class="{ active: config.attentionMode === 'contrast' }" :aria-pressed="config.attentionMode === 'contrast'" @click="config.attentionMode = 'contrast'; sync()">CONTRAST</button>
+            <button type="button" class="mode-btn" :class="{ active: config.attentionMode === 'color' }" :aria-pressed="config.attentionMode === 'color'" @click="config.attentionMode = 'color'; sync()">COLOR</button>
           </div>
 
           <div class="attention-info">
@@ -463,8 +547,8 @@ onMounted(() => {
             <input type="range" min="0" max="1" step="0.05" :value="config.focusDimStrength" @input="config.focusDimStrength = parseFloat(($event.target as HTMLInputElement).value); sync()">
           </div>
           <div class="mode-grid">
-            <div class="mode-btn" :class="{ active: config.focusTrigger === 'typing' }" @click="config.focusTrigger = 'typing'; sync()">WHILE TYPING</div>
-            <div class="mode-btn" :class="{ active: config.focusTrigger === 'active' }" @click="config.focusTrigger = 'active'; sync()">WHILE ACTIVE</div>
+            <button type="button" class="mode-btn" :class="{ active: config.focusTrigger === 'typing' }" :aria-pressed="config.focusTrigger === 'typing'" @click="config.focusTrigger = 'typing'; sync()">WHILE TYPING</button>
+            <button type="button" class="mode-btn" :class="{ active: config.focusTrigger === 'active' }" :aria-pressed="config.focusTrigger === 'active'" @click="config.focusTrigger = 'active'; sync()">WHILE ACTIVE</button>
           </div>
         </div>
         <div class="info-text">Dims the desktop periphery around your work locus (HazeOver-style). Note: it dims — a true background blur isn't possible for a transparent overlay.</div>
@@ -499,7 +583,7 @@ onMounted(() => {
           <div class="support-line" v-else>
             Free and yours to keep. If it earns a place on your screen…
           </div>
-          <button class="coffee-btn" @click="openSupport">☕ BUY ME A COFFEE</button>
+          <button class="coffee-btn" @click="openSupport">☕ SUPPORT THE PROJECT</button>
         </div>
       </div>
 
@@ -520,9 +604,15 @@ onMounted(() => {
 </template>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+button { font: inherit; }
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #faff00;
+  outline-offset: 2px;
+}
 
 .config-panel {
   font-family: 'JetBrains Mono', 'Courier New', monospace;
@@ -647,6 +737,11 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 .slider-row .value { color: #05d9e8; }
+.setting-label {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #888;
+}
 
 input[type="range"] {
   -webkit-appearance: none;
@@ -666,6 +761,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .master-toggle {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -714,6 +810,35 @@ input[type="range"]::-webkit-slider-thumb {
   color: #888;
 }
 .theme-card.active .theme-name { color: #05d9e8; }
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  background: #111;
+  border: 1px solid #222;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.preset-card:hover { border-color: #444; }
+.preset-card.active { border-color: #05d9e8; background: rgba(5, 217, 232, 0.05); }
+.preset-name {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #05d9e8;
+  font-weight: 700;
+}
+.preset-desc {
+  font-size: 8px;
+  color: #666;
+  line-height: 1.3;
+}
 
 .no-displays { font-size: 10px; color: #666; padding: 4px 0; }
 .display-res { font-size: 9px; color: #666; margin-left: 6px; }
@@ -771,6 +896,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .mode-btn:hover { border-color: #555; color: #ccc; }
 .mode-btn.active { border-color: #05d9e8; color: #05d9e8; background: rgba(5, 217, 232, 0.05); }
+.performance-grid .mode-btn { flex: 1; }
 
 .attention-info {
   margin-top: 4px;

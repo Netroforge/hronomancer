@@ -26,5 +26,6 @@ contextBridge.exposeInMainWorld('cyberAPI', {
   windowMove: (offsetX: number, offsetY: number) => ipcRenderer.send('window-move', offsetX, offsetY),
   startPomodoro: () => ipcRenderer.send('start-pomodoro'),
   setPomodoroWork: (minutes: number) => ipcRenderer.send('set-pomodoro-work', minutes),
+  setPomodoroBreak: (minutes: number) => ipcRenderer.send('set-pomodoro-break', minutes),
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
 } satisfies CyberAPI);

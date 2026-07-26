@@ -212,6 +212,10 @@ export interface OverlayState {
   colorTheme: ThemePreset; // the colour palette
   glitchTheme: string; // id of the glitch style — independent of the colour theme
   pomodoro: PomodoroState;
+  pomodoroWorkMinutes: number; // length of a work block (persisted, not per-display)
+  pomodoroBreakMinutes: number; // length of a break (persisted, not per-display)
+  launchAtLogin: boolean; // start Hronomancer when the user logs in (persisted global)
+  performanceProfile: PerformanceProfile; // global screen-analysis/render cadence
   bootComplete: boolean;
   notificationFlash: number;
   presence: PresenceState;
@@ -254,6 +258,9 @@ export interface DisplayInfoMessage {
 export type SetConfigPayload = Omit<Partial<OverlayState>, 'displays' | 'attention'> & {
   displays?: { id: number; enabled: boolean }[]; // only the user-controllable flag is sent
   attention?: { enabled: boolean; mode: AttentionMode; sensitivity: number; notifyOnComplete: boolean }; // config subset only
+  launchAtLogin?: boolean; // global, persisted
+  pomodoroWorkMinutes?: number; // global, persisted (not per-display)
+  pomodoroBreakMinutes?: number; // global, persisted (not per-display)
   targetDisplayId?: number;
   applyToAll?: boolean;
 };
@@ -272,6 +279,7 @@ export interface CyberAPI {
   windowMove: (offsetX: number, offsetY: number) => void;
   startPomodoro: () => void;
   setPomodoroWork: (minutes: number) => void;
+  setPomodoroBreak: (minutes: number) => void;
   openExternal: (url: string) => void;
 }
 
@@ -287,6 +295,9 @@ export type AttentionMode = 'auto' | 'notification' | 'motion' | 'contrast' | 'c
 /** When the focus spotlight engages: only during sustained typing, or whenever
  * you're present and recently active (reading/mousing counts too). */
 export type FocusTrigger = 'typing' | 'active';
+
+/** Resource/visual-quality balance shared by screen analysis and render loops. */
+export type PerformanceProfile = 'eco' | 'balanced' | 'smooth';
 
 /** One entry in the Signal Log — a screen-assist event worth remembering after
  * its transient on-canvas cue has faded. `away` marks events that happened while
@@ -515,6 +526,148 @@ export function normalizeGlitchConfig(value: unknown): GlitchConfig {
   return base;
 }
 
+// ─── Presets ───────────────────────────────────────────────────
+// One-click starting points so a new user isn't faced with ~30 toggles. Each
+// preset is a flat bundle of settings applied to every display at once (so the
+// look is coherent everywhere). Keys map directly onto OverlayState fields —
+// the config UI resolves colorThemeId/glitchThemeId through the existing
+// `setConfig` pipeline, same as any manual change.
+
+export interface PresetValues {
+  intensity?: number;
+  glitchFrequency?: number;
+  showScanlines?: boolean;
+  showGlitches?: boolean;
+  showCursorTrail?: boolean;
+  showTargetHighlight?: boolean;
+  showClock?: boolean;
+  showStatsHud?: boolean;
+  showPomodoro?: boolean;
+  showAudioViz?: boolean;
+  showStatus?: boolean;
+  showSysTag?: boolean;
+  showVignette?: boolean;
+  showEdgeGlow?: boolean;
+  showActivityBar?: boolean;
+  showColorFlash?: boolean;
+  showNotificationFlash?: boolean;
+  systemLoadGlow?: boolean;
+  showFocusRing?: boolean;
+  breakReminders?: boolean;
+  presenceDimming?: boolean;
+  showTaskComplete?: boolean;
+  showNotificationRadar?: boolean;
+  focusSpotlight?: boolean;
+  focusDimStrength?: number;
+  focusTrigger?: FocusTrigger;
+  cinemaMode?: boolean;
+  showSignalLog?: boolean;
+  showSessionTime?: boolean;
+  colorThemeId?: string;
+  glitchThemeId?: string;
+  layout?: HudLayout;
+}
+
+export interface Preset {
+  id: string;
+  name: string;
+  description: string;
+  values: PresetValues;
+}
+
+export const PRESETS: Preset[] = [
+  {
+    id: 'full',
+    name: 'FULL SPECTRUM',
+    description: 'Everything on. Maximum cyberpunk.',
+    values: {
+      intensity: 0.7,
+      glitchFrequency: 0.02,
+      colorThemeId: 'cyber',
+      glitchThemeId: 'cyber',
+      showScanlines: true, showGlitches: true, showCursorTrail: true, showTargetHighlight: true,
+      showClock: true, showStatsHud: true, showPomodoro: false, showAudioViz: true,
+      showStatus: true, showSysTag: true, showVignette: true, showEdgeGlow: true, showActivityBar: true,
+      showColorFlash: true, showNotificationFlash: true, systemLoadGlow: true, showFocusRing: true,
+      breakReminders: true, presenceDimming: true, showTaskComplete: true, showNotificationRadar: true,
+      focusSpotlight: false, focusDimStrength: 0.5, focusTrigger: 'typing', cinemaMode: true,
+      showSignalLog: true, showSessionTime: false,
+    },
+  },
+  {
+    id: 'focus',
+    name: 'FOCUS',
+    description: 'Calm deep-work. Glitches off, smart assist on.',
+    values: {
+      intensity: 0.55,
+      glitchFrequency: 0.01,
+      colorThemeId: 'tron',
+      glitchThemeId: 'tron',
+      showScanlines: true, showGlitches: false, showCursorTrail: false, showTargetHighlight: true,
+      showClock: true, showStatsHud: false, showPomodoro: false, showAudioViz: true,
+      showStatus: true, showSysTag: true, showVignette: true, showEdgeGlow: true, showActivityBar: false,
+      showColorFlash: false, showNotificationFlash: true, systemLoadGlow: true, showFocusRing: true,
+      breakReminders: true, presenceDimming: true, showTaskComplete: true, showNotificationRadar: true,
+      focusSpotlight: true, focusDimStrength: 0.55, focusTrigger: 'typing', cinemaMode: true,
+      showSignalLog: true, showSessionTime: true,
+    },
+  },
+  {
+    id: 'ambient',
+    name: 'AMBIENT',
+    description: 'Quiet backdrop. Only the helpful, glanceable cues.',
+    values: {
+      intensity: 0.4,
+      glitchFrequency: 0.005,
+      colorThemeId: 'synthwave',
+      glitchThemeId: 'synthwave',
+      showScanlines: true, showGlitches: false, showCursorTrail: false, showTargetHighlight: false,
+      showClock: true, showStatsHud: false, showPomodoro: false, showAudioViz: false,
+      showStatus: false, showSysTag: false, showVignette: true, showEdgeGlow: false, showActivityBar: false,
+      showColorFlash: false, showNotificationFlash: false, systemLoadGlow: true, showFocusRing: true,
+      breakReminders: true, presenceDimming: true, showTaskComplete: true, showNotificationRadar: true,
+      focusSpotlight: false, focusDimStrength: 0.5, focusTrigger: 'typing', cinemaMode: true,
+      showSignalLog: true, showSessionTime: true,
+    },
+  },
+  {
+    id: 'minimal',
+    name: 'MINIMAL',
+    description: 'Just a clock, scanlines and a glowing frame.',
+    values: {
+      intensity: 0.5,
+      glitchFrequency: 0.005,
+      colorThemeId: 'cyberpunk2077',
+      glitchThemeId: 'cyberpunk2077',
+      showScanlines: true, showGlitches: false, showCursorTrail: false, showTargetHighlight: false,
+      showClock: true, showStatsHud: false, showPomodoro: false, showAudioViz: false,
+      showStatus: false, showSysTag: false, showVignette: true, showEdgeGlow: true, showActivityBar: false,
+      showColorFlash: false, showNotificationFlash: false, systemLoadGlow: false, showFocusRing: false,
+      breakReminders: false, presenceDimming: false, showTaskComplete: false, showNotificationRadar: false,
+      focusSpotlight: false, focusDimStrength: 0.5, focusTrigger: 'typing', cinemaMode: true,
+      showSignalLog: false, showSessionTime: false,
+    },
+  },
+  {
+    id: 'maximum',
+    name: 'MAXIMUM',
+    description: 'Overdrive. Every effect, maxed out.',
+    values: {
+      intensity: 1.0,
+      glitchFrequency: 0.08,
+      colorThemeId: 'evangelion',
+      glitchThemeId: 'cyberpunk2077',
+      showScanlines: true, showGlitches: true, showCursorTrail: true, showTargetHighlight: true,
+      showClock: true, showStatsHud: true, showPomodoro: true, showAudioViz: true,
+      showStatus: true, showSysTag: true, showVignette: true, showEdgeGlow: true, showActivityBar: true,
+      showColorFlash: true, showNotificationFlash: true, systemLoadGlow: true, showFocusRing: true,
+      breakReminders: true, presenceDimming: true, showTaskComplete: true, showNotificationRadar: true,
+      focusSpotlight: true, focusDimStrength: 0.8, focusTrigger: 'active', cinemaMode: true,
+      showSignalLog: true, showSessionTime: true,
+    },
+  },
+];
+
 // ─── Per-display settings ───────────────────────────────────────
 // Every field a user can configure independently per monitor. Runtime data
 // (input, system stats, screen/audio analysis, presence, pomodoro, attention)
@@ -633,6 +786,10 @@ export function createDefaultState(): OverlayState {
     colorTheme: getDefaultTheme(),
     glitchTheme: getDefaultGlitchThemeId(),
     pomodoro: { active: false, phase: 'work', totalSeconds: 25 * 60, remainingSeconds: 25 * 60 },
+    pomodoroWorkMinutes: 25,
+    pomodoroBreakMinutes: 5,
+    launchAtLogin: false,
+    performanceProfile: 'balanced',
     bootComplete: false,
     notificationFlash: 0,
     presence: { idleMs: 0, active: true, continuousActiveMs: 0, breakLevel: 0 },

@@ -6,9 +6,13 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-and-publish-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -16,7 +20,8 @@ jobs:
       - name: Installing Node
         uses: actions/setup-node@v6
         with:
-          node-version: 23
+          node-version: 24
+          cache: npm
 
       - name: Build and publish
         env:
@@ -24,11 +29,12 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y rpm
           sudo snap install snapcraft --classic
-          npm install
+          npm ci
           npm run publish:linux
 
   build-and-publish-mac:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -36,17 +42,19 @@ jobs:
       - name: Installing Node
         uses: actions/setup-node@v6
         with:
-          node-version: 23
+          node-version: 24
+          cache: npm
 
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          npm install
+          npm ci
           npm run publish:mac
 
   build-and-publish-win:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -54,13 +62,14 @@ jobs:
       - name: Installing Node
         uses: actions/setup-node@v6
         with:
-          node-version: 23
+          node-version: 24
+          cache: npm
 
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          npm install
+          npm ci
           npm run publish:win
 
   hashes:

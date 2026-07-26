@@ -1,7 +1,12 @@
 import { app } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync } from 'fs';
-import type { OverlayState, AttentionMode, DisplaySettings } from '../../src/renderer/shared/types';
+import type {
+  OverlayState,
+  AttentionMode,
+  DisplaySettings,
+  PerformanceProfile,
+} from '../../src/renderer/shared/types';
 import {
   THEMES,
   createDefaultState,
@@ -28,6 +33,10 @@ export interface PersistedSettings {
   lifetimeTasksDone: number;
   defaults: PersistedDisplaySettings;
   displays: { id: number; enabled: boolean; settings: PersistedDisplaySettings }[];
+  launchAtLogin: boolean;
+  pomodoroWorkMinutes: number;
+  pomodoroBreakMinutes: number;
+  performanceProfile: PerformanceProfile;
 }
 
 function settingsPath(): string {
@@ -91,6 +100,10 @@ export function extractSettings(state: OverlayState, displaySettings: Map<number
       notifyOnComplete: state.attention.notifyOnComplete,
     },
     lifetimeTasksDone: state.lifetimeTasksDone,
+    launchAtLogin: state.launchAtLogin,
+    pomodoroWorkMinutes: state.pomodoroWorkMinutes,
+    pomodoroBreakMinutes: state.pomodoroBreakMinutes,
+    performanceProfile: state.performanceProfile,
     defaults: toPersisted(defaults),
     displays: state.displays.map((d) => ({
       id: d.id,
@@ -120,6 +133,17 @@ export function applySettings(
   }
 
   if (typeof s.lifetimeTasksDone === 'number') state.lifetimeTasksDone = s.lifetimeTasksDone;
+
+  if (typeof s.launchAtLogin === 'boolean') state.launchAtLogin = s.launchAtLogin;
+  if (typeof s.pomodoroWorkMinutes === 'number') {
+    state.pomodoroWorkMinutes = Math.min(120, Math.max(1, Math.round(s.pomodoroWorkMinutes)));
+  }
+  if (typeof s.pomodoroBreakMinutes === 'number') {
+    state.pomodoroBreakMinutes = Math.min(60, Math.max(1, Math.round(s.pomodoroBreakMinutes)));
+  }
+  if (s.performanceProfile === 'eco' || s.performanceProfile === 'balanced' || s.performanceProfile === 'smooth') {
+    state.performanceProfile = s.performanceProfile;
+  }
 
   // Restore the default template onto `state`'s settings fields.
   const defaults = fromPersisted(s.defaults, base);

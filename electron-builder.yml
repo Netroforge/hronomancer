@@ -13,7 +13,7 @@ asarUnpack:
 
 win:
   executableName: Hronomancer
-  icon: ./build/icon.ico
+  icon: ./build/icon.svg
   target:
     - target: nsis
       arch:
@@ -44,13 +44,9 @@ portable:
   artifactName: ${productName}-${version}-${arch}-windows-no-installer.${ext}
 
 mac:
-  entitlementsInherit: build/entitlements.mac.plist
-  icon: ./build/icon.icns
+  icon: ./build/icon.svg
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    - NSMicrophoneUsageDescription: Hronomancer uses microphone levels locally for the optional audio visualizer.
   notarize: false
   target:
     - target: zip
@@ -65,8 +61,9 @@ dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 linux:
-  icon: ./build/icon.png
+  icon: ./build/icon.svg
   maintainer: Netroforge
+  syncDesktopName: true
   target:
     - target: AppImage
       arch:
