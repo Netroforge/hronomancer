@@ -33,6 +33,15 @@ updates:
       - dependency-name: 'electron'
         update-types:
           - 'version-update:semver-major'
+      # Keep build-tool majors aligned with the peer ranges declared by
+      # electron-vite and vue-tsc; incompatible Vite 8 / TypeScript 7 bumps
+      # previously broke clean installs and type-checking.
+      - dependency-name: 'vite'
+        update-types:
+          - 'version-update:semver-major'
+      - dependency-name: 'typescript'
+        update-types:
+          - 'version-update:semver-major'
     open-pull-requests-limit: 10
 
   - package-ecosystem: 'github-actions'

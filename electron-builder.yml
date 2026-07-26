@@ -83,11 +83,13 @@ linux:
   category: Utility
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
-snap:
+snapcraft:
+  base: core22
   artifactName: ${productName}-${version}-${arch}.${ext}
-  confinement: strict
   publish:
     - provider: github
+  core22:
+    confinement: strict
 deb:
   artifactName: ${productName}-${version}-${arch}.${ext}
 rpm:
