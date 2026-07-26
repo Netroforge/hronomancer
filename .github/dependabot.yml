@@ -27,6 +27,12 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+    # Electron majors must pass the native overlay click-through smoke test
+    # before being adopted; v43 regressed the X11 input region to full-screen.
+    ignore:
+      - dependency-name: 'electron'
+        update-types:
+          - 'version-update:semver-major'
     open-pull-requests-limit: 10
 
   - package-ecosystem: 'github-actions'
